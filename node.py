@@ -78,3 +78,50 @@ def search():
             for r in results
         ],
     })
+
+#   Peer discovery routes 
+
+@app.post("/peers/register")
+def peers_register():
+   
+    if _registry is None:
+        return jsonify({
+            "error": "This node is not a bootstrap node."
+        }), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Expected JSON body."}), 400
+
+    node_id = data.get("node_id")
+    host    = data.get("host")
+    port    = data.get("port")
+
+    if not all([node_id, host, port]):
+        return jsonify({
+            "error": "Required fields: node_id, host, port."
+        }), 400
+
+    _registry.register(node_id=node_id, host=host, port=int(port))
+
+    return jsonify({
+        "status": "registered",
+        "node_id": node_id,
+    })
+
+
+@app.get("/peers/list")
+def peers_list():
+    
+    if _registry is None:
+        return jsonify({
+            "error": "This node is not a bootstrap node."
+        }), 403
+
+    exclude_id = request.args.get("exclude")
+    live_peers = _registry.get_live_peers(exclude_id=exclude_id)
+
+    return jsonify({
+        "peers": [p.to_dict() for p in live_peers],
+        "count": len(live_peers),
+    })
