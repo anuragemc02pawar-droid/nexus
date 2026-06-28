@@ -125,3 +125,66 @@ def peers_list():
         "peers": [p.to_dict() for p in live_peers],
         "count": len(live_peers),
     })
+
+#   Startup 
+
+def parse_slice(spec: str | None) -> list[dict]:
+    if not spec:
+        return PAPERS
+    try:
+        start, end = spec.split(":")
+        return PAPERS[int(start):int(end)]
+    except (ValueError, IndexError):
+        logger.error("Invalid slice '%s'. Expected format: 'start:end'", spec)
+        sys.exit(1)
+
+
+def start_discovery(node_id: str, host: str, port: int, bootstrap_url: str) -> None:
+   
+    def _start():
+        time.sleep(1)
+        global _discovery
+        _discovery = DiscoveryClient(
+            own_id=node_id,
+            own_host=host,
+            own_port=port,
+            bootstrap_url=bootstrap_url,
+        )
+        _discovery.start()
+
+    import time
+    t = threading.Thread(target=_start, daemon=True, name="discovery-init")
+    t.start()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run a Nexus search node.")
+    parser.add_argument("--port",          type=int,  default=5001)
+    parser.add_argument("--host",          type=str,  default="localhost")
+    parser.add_argument("--node-id",       type=str,  default=None)
+    parser.add_argument("--slice",         type=str,  default=None)
+    parser.add_argument("--bootstrap",     action="store_true",
+                        help="Run this node as the bootstrap peer registry.")
+    parser.add_argument("--bootstrap-url", type=str,  default="http://localhost:5001",
+                        help="Address of the bootstrap node to register with.")
+    args = parser.parse_args()
+
+    _node_id = args.node_id or f"node-{args.port}"
+    node_papers = parse_slice(args.slice)
+
+    logger.info("Starting %s on port %d with %d papers", _node_id, args.port, len(node_papers))
+
+    _engine = SearchEngine(papers=node_papers, node_id=_node_id)
+
+    if args.bootstrap:
+        _registry = PeerRegistry()
+        logger.info("[%s] Acting as bootstrap node", _node_id)
+
+    start_discovery(
+        node_id=_node_id,
+        host=args.host,
+        port=args.port,
+        bootstrap_url=args.bootstrap_url,
+    )
+
+    app.run(host="0.0.0.0", port=args.port, debug=False, use_reloader=False)
