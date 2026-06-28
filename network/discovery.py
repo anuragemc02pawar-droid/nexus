@@ -92,4 +92,83 @@ class PeerRegistry:
                 ]
                 for node_id in dead:
                     del self._peers[node_id]
-                    logger.info("[PeerRegistry] Evicted unresponsive peer: %s", node_id)    
+                    logger.info("[PeerRegistry] Evicted unresponsive peer: %s", node_id) 
+
+#   Peer discovery   
+
+class DiscoveryClient:
+
+    HEARTBEAT_INTERVAL_SECONDS = 10
+
+    def __init__(
+        self,
+        own_id: str,
+        own_host: str,
+        own_port: int,
+        bootstrap_url: str,
+    ):
+        self.own_id = own_id
+        self.own_host = own_host
+        self.own_port = own_port
+        self.bootstrap_url = bootstrap_url.rstrip("/")
+
+        self._heartbeat_thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        
+        success = self._send_heartbeat()
+        if not success:
+            logger.warning(
+                "[%s] Could not reach bootstrap at %s — "
+                "running in standalone mode.",
+                self.own_id, self.bootstrap_url,
+            )
+
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            daemon=True,
+            name=f"heartbeat-{self.own_id}",
+        )
+        self._heartbeat_thread.start()
+        logger.info(
+            "[%s] Discovery started. Bootstrap=%s, heartbeat every %ds",
+            self.own_id, self.bootstrap_url, self.HEARTBEAT_INTERVAL_SECONDS,
+        )
+
+    def get_peers(self) -> list[dict]:
+        
+        try:
+            response = requests.get(
+                f"{self.bootstrap_url}/peers/list",
+                params={"exclude": self.own_id},
+                timeout=5,
+            )
+            response.raise_for_status()
+            return response.json().get("peers", [])
+
+        except requests.RequestException as e:
+            logger.warning("[%s] Could not fetch peer list: %s", self.own_id, e)
+            return []
+
+    def _send_heartbeat(self) -> bool:
+        
+        try:
+            response = requests.post(
+                f"{self.bootstrap_url}/peers/register",
+                json={
+                    "node_id": self.own_id,
+                    "host": self.own_host,
+                    "port": self.own_port,
+                },
+                timeout=5,
+            )
+            return response.status_code == 200
+
+        except requests.RequestException:
+            return False
+
+    def _heartbeat_loop(self) -> None:
+       
+        while True:
+            time.sleep(self.HEARTBEAT_INTERVAL_SECONDS)
+            self._send_heartbeat()
