@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus — {{ node_id }}</title>
+  <style>
+    :root {
+      --bg:       #0b0d10;
+      --surface:  #13161b;
+      --border:   #1f242c;
+      --text:     #dde1e7;
+      --muted:    #7a8291;
+      --accent:   #4fd1a5;
+      --tag-bg:   #0d1f18;
+      --tag-text: #3fc694;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .logo-icon {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .node-badge {
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-family: ui-monospace, monospace;
+    }
+
+    main {
+      max-width: 700px;
+      margin: 64px auto 80px;
+      padding: 0 24px;
+    }
+
+    .search-wrap {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+
+    #query {
+      flex: 1;
+      padding: 13px 16px;
+      font-size: 15px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #query::placeholder { color: var(--muted); }
+    #query:focus { border-color: var(--accent); }
+
+    #search-btn {
+      padding: 13px 22px;
+      font-size: 14px;
+      font-weight: 600;
+      background: var(--accent);
+      color: #05201a;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    #search-btn:hover { opacity: 0.88; }
+    #search-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .state-msg {
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+      padding: 24px 0;
+    }
+
+    #results { display: flex; flex-direction: column; gap: 14px; }
+
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      transition: border-color 0.15s;
+    }
+
+    .result-card:hover { border-color: #2e353f; }
+
+    .result-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .result-abstract {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-bottom: 12px;
+    }
+
+    .result-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      font-size: 11.5px;
+      font-family: ui-monospace, monospace;
+      background: var(--tag-bg);
+      color: var(--tag-text);
+      border: 1px solid #1a3328;
+      border-radius: 5px;
+      padding: 2px 8px;
+    }
+
+    .score {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+
+    .score-bar-wrap {
+      flex: 1;
+      background: var(--border);
+      border-radius: 3px;
+      height: 3px;
+      max-width: 80px;
+    }
+
+    .score-bar {
+      background: var(--accent);
+      height: 100%;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <img class="logo-icon" src="/static/assets/logo.png" alt="Nexus logo" />
+    Nexus
+  </div>
+  <div class="node-badge">{{ node_id }} · {{ paper_count }} papers</div>
+</header>
+
+<main>
+  <div class="search-wrap">
+    <input
+      id="query"
+      type="text"
+      placeholder="Search research papers semantically…"
+      autocomplete="off"
+      autofocus
+    />
+    <button id="search-btn" onclick="handleSearch()">Search</button>
+  </div>
+
+  <div id="results">
+    <p class="state-msg">Enter a query above — results ranked by semantic similarity, not keyword overlap.</p>
+  </div>
+</main>
+
+<script>
+  const input   = document.getElementById("query");
+  const btn     = document.getElementById("search-btn");
+  const results = document.getElementById("results");
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleSearch();
+  });
+
+  async function handleSearch() {
+    const query = input.value.trim();
+    if (!query) return;
+
+    btn.disabled = true;
+    results.innerHTML = `<p class="state-msg">Searching…</p>`;
+
+    try {
+      const res  = await fetch(`/search?q=${encodeURIComponent(query)}&k=5`);
+      const data = await res.json();
+
+      if (data.error) {
+        results.innerHTML = `<p class="state-msg">Error: ${data.error}</p>`;
+        return;
+      }
+
+      if (!data.results.length) {
+        results.innerHTML = `<p class="state-msg">No results found.</p>`;
+        return;
+      }
+
+      results.innerHTML = data.results.map(r => renderCard(r)).join("");
+
+    } catch (err) {
+      results.innerHTML = `<p class="state-msg">Request failed — is the node running?</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function renderCard(r) {
+    const barWidth = Math.round(r.score * 100);
+    return `
+      <div class="result-card">
+        <div class="result-title">${escHtml(r.title)} <span style="color:var(--muted);font-weight:400">(${r.year})</span></div>
+        <div class="result-abstract">${escHtml(r.abstract)}</div>
+        <div class="result-meta">
+          <span class="tag">${r.domain}</span>
+          <span class="tag">${r.node_id}</span>
+          <div class="score-bar-wrap">
+            <div class="score-bar" style="width:${barWidth}%"></div>
+          </div>
+          <span class="score">${r.score.toFixed(3)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function escHtml(str) {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+</script>
+
+</body>
+</html>
